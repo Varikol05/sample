@@ -1,0 +1,67 @@
+Initializing LangChain Agent with MCP Tools...
+
+Agent is ready. Asking it to list and call tools...
+
+
+
+> Entering new AgentExecutor chain...
+I need to use the ListAvailableTools function to find out all the tools available.
+Action: ListAvailableTools
+Action Input: {}
+Observation: [ERROR] Failed to fetch tools: unhandled errors in a TaskGroup (1 sub-exception)
+Thought:The action to list all available tools failed due to a server error.
+Final Answer: Unable to list tools due to a server error. Please try again later.
+
+> Finished chain.
+{'input': 'List all available tools.', 'chat_history': [HumanMessage(content='List all available tools.', additional_kwargs={}, response_metadata={}), AIMessage(content='Unable to list tools due to a server error. Please try again later.', additional_kwargs={}, response_metadata={})], 'output': 'Unable to list tools due to a server error. Please try again later.'}
+Enter the tool name to call:  GetProjects
+Enter tool arguments as JSON (e.g., {"id": 123}):  "name": "GetProjects"
+[ERROR] Invalid JSON format.
+
+
+> Entering new AgentExecutor chain...
+---------------------------------------------------------------------------
+ValueError                                Traceback (most recent call last)
+Cell In[2], line 119
+    116     print("[ERROR] Invalid JSON format.")
+    117     arguments = {}
+--> 119 result = agent.invoke({
+    120     "name": "CallUserTool",
+    121     "arguments": {
+    122         "name": tool_name,
+    123         "arguments": arguments
+    124     }
+    125 })
+    127 print(result)
+
+File ~\AppData\Roaming\Python\Python312\site-packages\langchain\chains\base.py:170, in Chain.invoke(self, input, config, **kwargs)
+    168 except BaseException as e:
+    169     run_manager.on_chain_error(e)
+--> 170     raise e
+    171 run_manager.on_chain_end(outputs)
+    173 if include_run_info:
+
+File ~\AppData\Roaming\Python\Python312\site-packages\langchain\chains\base.py:158, in Chain.invoke(self, input, config, **kwargs)
+    151 run_manager = callback_manager.on_chain_start(
+    152     None,
+    153     inputs,
+    154     run_id,
+    155     name=run_name,
+    156 )
+    157 try:
+--> 158     self._validate_inputs(inputs)
+    159     outputs = (
+    160         self._call(inputs, run_manager=run_manager)
+    161         if new_arg_supported
+    162         else self._call(inputs)
+    163     )
+    165     final_outputs: Dict[str, Any] = self.prep_outputs(
+    166         inputs, outputs, return_only_outputs
+    167     )
+
+File ~\AppData\Roaming\Python\Python312\site-packages\langchain\chains\base.py:290, in Chain._validate_inputs(self, inputs)
+    288 missing_keys = set(self.input_keys).difference(inputs)
+    289 if missing_keys:
+--> 290     raise ValueError(f"Missing some input keys: {missing_keys}")
+
+ValueError: Missing some input keys: {'input'}
