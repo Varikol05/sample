@@ -1,128 +1,47 @@
-import asyncio
-import json
-import nest_asyncio
+Initializing LangChain Agent with MCP Tools...
 
-from mcp import ClientSession
-from mcp.client.sse import sse_client
+Agent is ready. Asking it to list and call tools...
 
-from langchain.agents import Tool, initialize_agent
-from langchain.memory import ConversationBufferMemory
-from langchain.chat_models import AzureChatOpenAI
 
-# Patch the event loop for environments like Jupyter or IPython
-nest_asyncio.apply()
 
-# === Azure OpenAI Configuration ===
-def get_openai_client():
-    return AzureChatOpenAI(
-        openai_api_base="https://testopenaiassets.openai.azure.com",
-        openai_api_version="2024-08-01-preview",
-        deployment_name="Fourth_Chatbot",
-        openai_api_type="azure",
-        temperature=0.7,
-        max_tokens=2000,
-        model_kwargs={
-            "top_p": 0.9,
-            "frequency_penalty": 0.2,
-            "presence_penalty": 0.1
-        }
-    )
+> Entering new AgentExecutor chain...
+---------------------------------------------------------------------------
+ValueError                                Traceback (most recent call last)
+Cell In[3], line 126
+    123 print("Agent is ready. Asking it to list and call tools...\n")
+    125 # Example usage
+--> 126 print(agent.invoke("List all available tools."))
+    128 tool_input = input("Enter the tool name and optional arguments (e.g., get-vendors {\"region\": \"EU\"}): ")
+    129 print(agent.invoke(f"CallUserTool with {tool_input}"))
 
-# === Globals ===
-available_tools = []
-sse_url = "https://employee-mcp-v1-6b0n96.dw4w1g-2.gbr-e1.cloudhub.io/sse"
+File ~\AppData\Roaming\Python\Python312\site-packages\langchain\chains\base.py:170, in Chain.invoke(self, input, config, **kwargs)
+    168 except BaseException as e:
+    169     run_manager.on_chain_error(e)
+--> 170     raise e
+    171 run_manager.on_chain_end(outputs)
+    173 if include_run_info:
 
-# === TOOL 1: List Available Tools ===
-def list_available_tools(_: str) -> str:
-    global available_tools
+File ~\AppData\Roaming\Python\Python312\site-packages\langchain\chains\base.py:158, in Chain.invoke(self, input, config, **kwargs)
+    151 run_manager = callback_manager.on_chain_start(
+    152     None,
+    153     inputs,
+    154     run_id,
+    155     name=run_name,
+    156 )
+    157 try:
+--> 158     self._validate_inputs(inputs)
+    159     outputs = (
+    160         self._call(inputs, run_manager=run_manager)
+    161         if new_arg_supported
+    162         else self._call(inputs)
+    163     )
+    165     final_outputs: Dict[str, Any] = self.prep_outputs(
+    166         inputs, outputs, return_only_outputs
+    167     )
 
-    async def fetch_tools():
-        async with sse_client(url=sse_url) as streams:
-            async with ClientSession(streams[0], streams[1]) as session:
-                await session.initialize()
-                return await session.list_tools()
+File ~\AppData\Roaming\Python\Python312\site-packages\langchain\chains\base.py:290, in Chain._validate_inputs(self, inputs)
+    288 missing_keys = set(self.input_keys).difference(inputs)
+    289 if missing_keys:
+--> 290     raise ValueError(f"Missing some input keys: {missing_keys}")
 
-    try:
-        loop = asyncio.get_event_loop()
-        available_tools = loop.run_until_complete(fetch_tools())
-
-        # Convert each tool to a readable string
-        tool_strings = [str(tool) for tool in available_tools]
-        return "[SUCCESS] Available tools:\n" + "\n".join(tool_strings)
-
-    except Exception as e:
-        return f"[ERROR] Failed to fetch tools: {str(e)}"
-
-# === TOOL 2: Call Tool by User Input (with optional JSON arguments) ===
-def call_user_tool(tool_input: str) -> str:
-    """
-    tool_input: a string like 'get-vendors {"region": "EU", "type": "electronics"}'
-    """
-    try:
-        if "{" in tool_input:
-            tool_name, arg_str = tool_input.split("{", 1)
-            tool_name = tool_name.strip()
-            arg_str = "{" + arg_str  # add back opening brace
-            arguments = json.loads(arg_str)
-        else:
-            tool_name = tool_input.strip()
-            arguments = {}
-
-    except json.JSONDecodeError as e:
-        return f"[ERROR] Failed to parse arguments: {str(e)}"
-
-    async def call_tool():
-        async with sse_client(url=sse_url) as streams:
-            async with ClientSession(streams[0], streams[1]) as session:
-                await session.initialize()
-                return await session.call_tool(tool_name, {
-                    "method": "tools/call",
-                    "params": {
-                        "name": tool_name,
-                        "arguments": arguments
-                    }
-                })
-
-    try:
-        loop = asyncio.get_event_loop()
-        result = loop.run_until_complete(call_tool())
-        return f"[SUCCESS] Tool '{tool_name}' executed successfully:\n{result}"
-
-    except Exception as e:
-        return f"[ERROR] Failed to call tool '{tool_name}': {str(e)}"
-
-# === MAIN EXECUTION ===
-if __name__ == "__main__":
-    print("Initializing LangChain Agent with MCP Tools...\n")
-
-    memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
-
-    tools = [
-        Tool(
-            name="ListAvailableTools",
-            func=list_available_tools,
-            description="Lists all tools available from the SSE endpoint."
-        ),
-        Tool(
-            name="CallUserTool",
-            func=call_user_tool,
-            description="Call a tool by name with optional JSON arguments. "
-                        "Input format: 'tool-name {\"arg1\": \"value\", \"arg2\": 123}'"
-        )
-    ]
-
-    agent = initialize_agent(
-        tools=tools,
-        llm=get_openai_client(),
-        agent_type="openai-functions",
-        memory=memory,
-        verbose=True
-    )
-
-    print("Agent is ready. Asking it to list and call tools...\n")
-
-    # Example usage
-    print(agent.invoke("List all available tools."))
-
-    tool_input = input("Enter the tool name and optional arguments (e.g., get-vendors {\"region\": \"EU\"}): ")
-    print(agent.invoke(f"CallUserTool with {tool_input}"))
+ValueError: Missing some input keys: {'input'}
