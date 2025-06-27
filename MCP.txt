@@ -1,67 +1,183 @@
-Initializing LangChain Agent with MCP Tools...
+import asyncio
 
-Agent is ready. Asking it to list and call tools...
+import nest_asyncio
 
+from mcp import ClientSession
 
+from mcp.client.sse import sse_client
 
-> Entering new AgentExecutor chain...
-I need to use the ListAvailableTools function to find out all the tools available.
-Action: ListAvailableTools
-Action Input: {}
-Observation: [ERROR] Failed to fetch tools: unhandled errors in a TaskGroup (1 sub-exception)
-Thought:The action to list all available tools failed due to a server error.
-Final Answer: Unable to list tools due to a server error. Please try again later.
+from langchain.agents import Tool, initialize_agent
 
-> Finished chain.
-{'input': 'List all available tools.', 'chat_history': [HumanMessage(content='List all available tools.', additional_kwargs={}, response_metadata={}), AIMessage(content='Unable to list tools due to a server error. Please try again later.', additional_kwargs={}, response_metadata={})], 'output': 'Unable to list tools due to a server error. Please try again later.'}
-Enter the tool name to call:  GetProjects
-Enter tool arguments as JSON (e.g., {"id": 123}):  "name": "GetProjects"
-[ERROR] Invalid JSON format.
+from langchain.memory import ConversationBufferMemory
 
+from langchain.chat_models import AzureChatOpenAI
+ 
+# Patch the event loop for environments like Jupyter or IPython
 
-> Entering new AgentExecutor chain...
----------------------------------------------------------------------------
-ValueError                                Traceback (most recent call last)
-Cell In[2], line 119
-    116     print("[ERROR] Invalid JSON format.")
-    117     arguments = {}
---> 119 result = agent.invoke({
-    120     "name": "CallUserTool",
-    121     "arguments": {
-    122         "name": tool_name,
-    123         "arguments": arguments
-    124     }
-    125 })
-    127 print(result)
+nest_asyncio.apply()
+ 
+# === Azure OpenAI Configuration ===
 
-File ~\AppData\Roaming\Python\Python312\site-packages\langchain\chains\base.py:170, in Chain.invoke(self, input, config, **kwargs)
-    168 except BaseException as e:
-    169     run_manager.on_chain_error(e)
---> 170     raise e
-    171 run_manager.on_chain_end(outputs)
-    173 if include_run_info:
+def get_openai_client():
 
-File ~\AppData\Roaming\Python\Python312\site-packages\langchain\chains\base.py:158, in Chain.invoke(self, input, config, **kwargs)
-    151 run_manager = callback_manager.on_chain_start(
-    152     None,
-    153     inputs,
-    154     run_id,
-    155     name=run_name,
-    156 )
-    157 try:
---> 158     self._validate_inputs(inputs)
-    159     outputs = (
-    160         self._call(inputs, run_manager=run_manager)
-    161         if new_arg_supported
-    162         else self._call(inputs)
-    163     )
-    165     final_outputs: Dict[str, Any] = self.prep_outputs(
-    166         inputs, outputs, return_only_outputs
-    167     )
+    return AzureChatOpenAI(
 
-File ~\AppData\Roaming\Python\Python312\site-packages\langchain\chains\base.py:290, in Chain._validate_inputs(self, inputs)
-    288 missing_keys = set(self.input_keys).difference(inputs)
-    289 if missing_keys:
---> 290     raise ValueError(f"Missing some input keys: {missing_keys}")
+        openai_api_base="https://testopenaiassets.openai.azure.com",
 
-ValueError: Missing some input keys: {'input'}
+        openai_api_version="2024-08-01-preview",
+
+        deployment_name="Fourth_Chatbot",
+
+       
+
+        openai_api_type="azure",
+
+        temperature=0.7,
+
+        max_tokens=2000,
+
+        model_kwargs={
+
+            "top_p": 0.9,
+
+            "frequency_penalty": 0.2,
+
+            "presence_penalty": 0.1
+
+        }
+
+    )
+ 
+# === Globals ===
+
+available_tools = []
+
+sse_url = "https://employee-mcp-v1-6b0n96.dw4w1g-2.gbr-e1.cloudhub.io/sse"
+ 
+# === TOOL 1: List Available Tools ===
+
+def list_available_tools(_: str) -> str:
+
+    global available_tools
+ 
+    async def fetch_tools():
+
+        async with sse_client(url=sse_url) as streams:
+
+            async with ClientSession(streams[0], streams[1]) as session:
+
+                await session.initialize()
+
+                return await session.list_tools()
+ 
+    try:
+
+        loop = asyncio.get_event_loop()
+
+        available_tools = loop.run_until_complete(fetch_tools())
+ 
+        # Convert each tool to a readable string
+
+        tool_strings = [str(tool) for tool in available_tools]
+
+        return "[SUCCESS] Available tools:\n" + "\n".join(tool_strings)
+
+    except Exception as e:
+
+        return f"[ERROR] Failed to fetch tools: {str(e)}"
+ 
+# === TOOL 2: Call Tool by User Input ===
+
+def call_user_tool(tool_name: str) -> str:
+
+    async def call_tool():
+
+        async with sse_client(url=sse_url) as streams:
+
+            async with ClientSession(streams[0], streams[1]) as session:
+
+                await session.initialize()
+
+                return await session.call_tool(tool_name, {
+
+                    "method": "tools/call",
+
+                    "params": {
+
+                        "name": tool_name,
+
+                        "arguments": {}
+
+                    }
+
+                })
+ 
+    try:
+
+        loop = asyncio.get_event_loop()
+
+        result = loop.run_until_complete(call_tool())
+
+        return f"[SUCCESS] Tool '{tool_name}' executed successfully:\n{result}"
+
+    except Exception as e:
+
+        return f"[ERROR] Failed to call tool '{tool_name}': {str(e)}"
+ 
+# === MAIN EXECUTION ===
+
+if __name__ == "__main__":
+
+    print("Initializing LangChain Agent with MCP Tools...\n")
+ 
+    memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
+ 
+    tools = [
+
+        Tool(
+
+            name="ListAvailableTools",
+
+            func=list_available_tools,
+
+            description="Lists all tools available from the SSE endpoint."
+
+        ),
+
+        Tool(
+
+            name="CallUserTool",
+
+            func=call_user_tool,
+
+            description="Call a tool by name. Input should be the tool name (e.g., get-vendors)."
+
+        )
+
+    ]
+ 
+    agent = initialize_agent(
+
+        tools=tools,
+
+        llm=get_openai_client(),
+
+        agent_type="openai-functions",
+
+        memory=memory,
+
+        verbose=True
+
+    )
+ 
+    print("Agent is ready. Asking it to list and call tools...\n")
+ 
+    # Example usage
+
+    agent.invoke("List all available tools.")
+
+    tool_name = input("Enter the tool name to call: ")
+
+    agent.invoke(f"CallUserTool with {tool_name}")
+
+ 
