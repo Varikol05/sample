@@ -1,17 +1,12 @@
 import asyncio
-
 import nest_asyncio
-
 from difflib import get_close_matches
 
 from mcp import ClientSession
-
 from mcp.client.sse import sse_client
 
 from langchain.agents import Tool, initialize_agent
-
 from langchain.memory import ConversationBufferMemory
-
 from langchain.chat_models import AzureChatOpenAI
 
 # Patch event loop for Jupyter/IPython
@@ -59,7 +54,7 @@ def list_available_tools(_: str) -> str:
             available_tools.append({
                 "name": tool.name,
                 "description": tool.description,
-                "arguments": getattr(tool, "arguments", [])  # ⬅️ Include tool arguments
+                "arguments": getattr(tool, "arguments", [])  # Fetch arguments
             })
 
         tool_strings = [f"{tool['name']}: {tool['description']}" for tool in available_tools]
@@ -68,7 +63,7 @@ def list_available_tools(_: str) -> str:
     except Exception as e:
         return f"[ERROR] Failed to fetch tools: {str(e)}"
 
-# === TOOL 2: Call Tool by Description ===
+# === TOOL 2: Call Tool by Description + Ask for Arguments ===
 def call_tool_by_description(description: str) -> str:
     global available_tools
 
@@ -83,17 +78,22 @@ def call_tool_by_description(description: str) -> str:
             return "[ERROR] No matching tool found."
 
         matched_tool_name = next(name for name, desc in tool_map.items() if desc == best_match[0])
-
-        # ⬇️ NEW: Get argument list for matched tool and prompt user
         matched_tool = next(tool for tool in available_tools if tool["name"] == matched_tool_name)
-        user_arguments = {}
 
+        # === Step 1: Display arguments for the matched tool ===
+        print(f"\nArguments required for tool '{matched_tool_name}':")
+        for arg in matched_tool.get("arguments", []):
+            print(f"- {arg.get('name')} ({arg.get('description', 'No description')})")
+
+        # === Step 2: Ask user for each argument ===
+        user_arguments = {}
         for arg in matched_tool.get("arguments", []):
             arg_name = arg.get("name", "unknown")
             arg_desc = arg.get("description", "no description")
             user_input = input(f"Enter value for argument '{arg_name}' ({arg_desc}): ")
             user_arguments[arg_name] = user_input
 
+        # === Step 3: Call tool with user-provided argument values ===
         async def call_tool():
             async with sse_client(url=sse_url) as streams:
                 async with ClientSession(streams[0], streams[1]) as session:
@@ -102,7 +102,7 @@ def call_tool_by_description(description: str) -> str:
                         "method": "tools/call",
                         "params": {
                             "name": matched_tool_name,
-                            "arguments": user_arguments  # ⬅️ Pass user inputs
+                            "arguments": user_arguments
                         }
                     })
 
@@ -141,10 +141,10 @@ if __name__ == "__main__":
         verbose=True
     )
 
-    print("Agent is ready. Asking it to list and call tools...\n")
+    print("Agent is ready. Listing tools...\n")
+    print(agent.tools[0].func(""))
 
-    agent.invoke("List all available tools.")
+    user_description = input("\nDescribe the tool you want to use: ")
 
-    user_description = input("Describe the tool you want to use: ")
-
-    agent.invoke(f"Use the tool that does: '{user_description}'")
+    print("\nProcessing your request...\n")
+    print(agent.tools[1].func(user_description))  # Directly use the call_tool_by_description
