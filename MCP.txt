@@ -21,32 +21,18 @@ nest_asyncio.apply()
 # === Azure OpenAI Configuration ===
 
 def get_openai_client():
-
     return AzureChatOpenAI(
-
         openai_api_base="https://testopenaiassets.openai.azure.com",
-
         openai_api_version="2024-08-01-preview",
-
         deployment_name="Fourth_Chatbot",
-
-
         openai_api_type="azure",
-
         temperature=0.7,
-
         max_tokens=2000,
-
         model_kwargs={
-
             "top_p": 0.9,
-
             "frequency_penalty": 0.2,
-
             "presence_penalty": 0.1
-
         }
-
     )
  
 # === Globals ===
@@ -58,23 +44,16 @@ sse_url = "https://employee-mcp-v1-6b0n96.dw4w1g-2.gbr-e1.cloudhub.io/sse"
 # === TOOL 1: List Available Tools ===
 
 def list_available_tools(_: str) -> str:
-
     global available_tools
  
     async def fetch_tools():
-
         async with sse_client(url=sse_url) as streams:
-
             async with ClientSession(streams[0], streams[1]) as session:
-
                 await session.initialize()
-
                 return await session.list_tools()
  
     try:
-
         loop = asyncio.get_event_loop()
-
         result = loop.run_until_complete(fetch_tools())
  
         raw_tools = getattr(result, "tools", [])
@@ -82,121 +61,91 @@ def list_available_tools(_: str) -> str:
         available_tools.clear()
  
         for tool in raw_tools:
-
             available_tools.append({
-
                 "name": tool.name,
-
-                "description": tool.description
-
+                "description": tool.description,
+                "arguments": getattr(tool, "arguments", [])  # Add argument info if available
             })
  
         tool_strings = [f"{tool['name']}: {tool['description']}" for tool in available_tools]
-
         return "[SUCCESS] Available tools:\n" + "\n".join(tool_strings)
  
     except Exception as e:
-
         return f"[ERROR] Failed to fetch tools: {str(e)}"
  
 # === TOOL 2: Call Tool by Description ===
 
 def call_tool_by_description(description: str) -> str:
-
     global available_tools
  
     if not available_tools:
-
         list_available_tools("")
  
     try:
-
         tool_map = {tool["name"]: tool["description"] for tool in available_tools}
-
         best_match = get_close_matches(description, tool_map.values(), n=1, cutoff=0.3)
  
         if not best_match:
-
             return "[ERROR] No matching tool found."
  
         matched_tool_name = next(name for name, desc in tool_map.items() if desc == best_match[0])
- 
+
+        # === NEW: Get argument list and prompt user ===
+        matched_tool = next(t for t in available_tools if t["name"] == matched_tool_name)
+        user_arguments = {}
+
+        for arg in matched_tool.get("arguments", []):
+            arg_name = arg.get("name", "unknown")
+            arg_desc = arg.get("description", "")
+            user_input = input(f"Enter value for argument '{arg_name}' ({arg_desc}): ")
+            user_arguments[arg_name] = user_input
+
         async def call_tool():
-
             async with sse_client(url=sse_url) as streams:
-
                 async with ClientSession(streams[0], streams[1]) as session:
-
                     await session.initialize()
-
                     return await session.call_tool(matched_tool_name, {
-
                         "method": "tools/call",
-
                         "params": {
-
                             "name": matched_tool_name,
-
-                            "arguments": {}
-
+                            "arguments": user_arguments  # Pass collected arguments here
                         }
-
                     })
  
         loop = asyncio.get_event_loop()
-
         result = loop.run_until_complete(call_tool())
 
         return f"[SUCCESS] Tool '{matched_tool_name}' executed successfully:\n{result}"
  
     except Exception as e:
-
         return f"[ERROR] Failed to match or call tool: {str(e)}"
  
 # === MAIN EXECUTION ===
 
 if __name__ == "__main__":
-
     print("Initializing LangChain Agent with MCP Tools...\n")
  
     memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
  
     tools = [
-
         Tool(
-
             name="ListAvailableTools",
-
             func=list_available_tools,
-
             description="Lists all tools available from the SSE endpoint."
-
         ),
-
         Tool(
-
             name="CallToolByDescription",
-
             func=call_tool_by_description,
-
             description="Call a tool by describing what it does (e.g., 'get vendor list')."
-
         )
-
     ]
  
     agent = initialize_agent(
-
         tools=tools,
-
         llm=get_openai_client(),
-
         agent_type="openai-functions",
-
         memory=memory,
-
         verbose=True
-
     )
  
     print("Agent is ready. Asking it to list and call tools...\n")
@@ -206,5 +155,3 @@ if __name__ == "__main__":
     user_description = input("Describe the tool you want to use: ")
 
     agent.invoke(f"Use the tool that does: '{user_description}'")
-
- 
